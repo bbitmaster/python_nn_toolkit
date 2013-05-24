@@ -1,15 +1,15 @@
 import time
 import numpy as np;
 
-from nnet_toolkit import nnet_toolkit;
+from nnet_toolkit import nnet;
 
-layers = [nnet_toolkit.layer(2),nnet_toolkit.layer(128,'squash'),nnet_toolkit.layer(1,'squash')];
+layers = [nnet.layer(2),nnet.layer(128,'squash'),nnet.layer(1,'squash')];
 #layers = [nnet_toolkit.layer(2),nnet_toolkit.layer(256,'linear_rectifier'),nnet_toolkit.layer(128,'linear_rectifier'),nnet_toolkit.layer(64,'linear_rectifier'),nnet_toolkit.layer(32,'linear_rectifier'),nnet_toolkit.layer(1,'squash')];
 
 training_data = np.array([[0,0,1,1],[0,1,0,1]]);
 training_out = np.array([0,1,1,0]);
 
-net = nnet_toolkit.net(layers,step_size=.1);
+net = nnet.net(layers,step_size=.1);
 
 net.input = training_data;
 for i in range(100000):
