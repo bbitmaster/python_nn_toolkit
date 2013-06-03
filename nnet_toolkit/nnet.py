@@ -28,6 +28,7 @@ class net(object):
 				l.step_size = step_size;
 			if(dropout is not None):
 				l.dropout = dropout
+		self.layer[len(self.layer)-1].dropout = None
 		self.initialize_weights()
 		self.zero_gradients()
 		self.epoch_size = 0
@@ -72,9 +73,11 @@ class net(object):
 				l.output = np.maximum(0,l.weighted_sums)
 			else: #base case is linear
 				l.output = l.weighted_sums
-			#TODO: dropout?
 			if(l.dropout is not None and self.train == True):
-				l.output = l.output*np.random.binomial(1,l.dropout,l.output.shape);
+				if(l.dropout == 0.5):
+					l.output = l.output*np.random.randint(0,2,l.output.shape);
+				else:
+					l.output = l.output*np.random.binomial(1,l.dropout,l.output.shape);
 			elif(l.dropout is not None and self.train == False):
 				l.output = l.output*(1.0 - l.dropout);
 		self.output = self.layer[len(self.layer)-1].output
