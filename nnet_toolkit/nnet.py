@@ -34,7 +34,7 @@ class net(object):
 		self.epoch_size = 0
 		self.train = True
 
-def initialize_weights(self):
+	def initialize_weights(self):
 		for index,l in enumerate(self.layer):
 			if index == 0:
 				C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.5 )
@@ -50,7 +50,8 @@ def initialize_weights(self):
 
 	@property
 	def input(self):
-		return self._input
+		self._input.copy_to_host()
+		return self._input.numpy_array
 
 	@input.setter
 	def input(self,value):
@@ -64,7 +65,7 @@ def initialize_weights(self):
 	def feed_forward(self,input=None):
 		#optionally allow passing input as an argument
 		if input is not None:
-			self._input = input
+			self.input = input
 
 		#NOTE: a possible speedup here would be not to reconstruct the matrix, but to
 		#fill it in each time.
@@ -82,7 +83,7 @@ def initialize_weights(self):
 				l.output = l.weighted_sums / (1+np.abs(l.weighted_sums))
 			elif(l.activation == 'sigmoid'):
 				l.output = 1/(1 + np.exp(-1*l.weighted_sums))
-				#TODO: linear rectified? softmax? others?
+				#TODO: softmax? others?
 			elif(l.activation == 'linear_rectifier'):
 				l.output = np.maximum(0,l.weighted_sums)
 			else: #base case is linear
@@ -113,7 +114,6 @@ def initialize_weights(self):
 				#must do this to account for the bias
 				delta_temp = np.append(self.error,np.zeros((1,self.error.shape[1])),axis=0)
 			else:
-				#print(str(index) + " " + str(self.layer[index+1].weights.transpose().shape) + " " + str(self.layer[index+1].delta.shape))
 				delta_temp = np.dot(self.layer[l.index+1].weights.transpose(),self.layer[l.index+1].delta);
 			
 			if(l.activation == 'squash'):
@@ -133,10 +133,6 @@ def initialize_weights(self):
 
 			l.delta = l.activation_derivative*delta_temp;
 			
-			#chop off bottom row
-			#if(l.index < len(self.layer)-1):
-			#	l.delta = l.delta[0:len(l.delta)-1];
-
 			#calculate weight gradient
 			l.gradient = l.gradient + np.dot(l.delta,l.input.transpose());
 		self.epoch_size = self.epoch_size + self._input.shape[1];
