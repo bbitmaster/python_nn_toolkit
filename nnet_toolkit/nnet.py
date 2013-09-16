@@ -93,10 +93,11 @@ class net(object):
 				l.output = l.weighted_sums
 			
 			if(l.n_active_count is not None):
+				activation_abs = np.abs(l.weighted_sums)
 				#place smallest activations in top rows
-				sorted_activations = np.sort(l.weighted_sums,axis=0)
+				sorted_activations = np.sort(activation_abs,axis=0)
 				#select the n'th smallest activation, and set everything >= it to 0
-				l.selected_neurons = l.weighted_sums >= sorted_activations[l.n_active_count,:]
+				l.selected_neurons = activation_abs >= sorted_activations[l.n_active_count,:]
 				l.output[l.selected_neurons] = 0;
 				
 			if(l.dropout is not None and self.train == True):
