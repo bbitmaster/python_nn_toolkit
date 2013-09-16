@@ -1,11 +1,12 @@
 import numpy as np
 		
 class layer(object):
-	def __init__(self,node_count,activation='squash',step_size=None,dropout=None):
+	def __init__(self,node_count,activation='squash',step_size=None,dropout=None,n_active_count=None):
 		self.node_count = node_count
 		self.activation = activation
 		self.step_size = step_size
 		self.dropout = dropout
+		self.n_active_count = n_active_count
 		pass;
 		
 class net(object):
@@ -83,21 +84,40 @@ class net(object):
 				l.output = l.weighted_sums / (1+np.abs(l.weighted_sums))
 			elif(l.activation == 'sigmoid'):
 				l.output = 1/(1 + np.exp(-1*l.weighted_sums))
+    			elif(l.activation == 'tanh'):
+				l.output = 1.7159*np.tanh((2.0/3.0)*l.weighted_sums)
 				#TODO: softmax? others?
 			elif(l.activation == 'linear_rectifier'):
 				l.output = np.maximum(0,l.weighted_sums)
 			else: #base case is linear
 				l.output = l.weighted_sums
+			
+			if(l.n_active_count is not None):
+				#place smallest activations in top rows
+				sorted_activations = np.sort(l.weighted_sums,axis=0)
+				#select the n'th smallest activation, and set everything >= it to 0
+				l.selected_neurons = l.weighted_sums >= sorted_activations[l.n_active_count,:]
+				l.output[l.selected_neurons] = 0;
+				
 			if(l.dropout is not None and self.train == True):
-				if(l.dropout == 0.5):
-					l.output = l.output*np.random.randint(0,2,l.output.shape);
+				if(l.activation == 'linear_rectifier'):
+					if(l.dropout == 0.5):
+						l.output = l.output*np.random.randint(0,2,l.output.shape);
+					else:
+						l.output = l.output*np.random.binomial(1,l.dropout,l.output.shape);
 				else:
-					l.output = l.output*np.random.binomial(1,l.dropout,l.output.shape);
+					if(l.dropout == 0.5):
+						l.d_selected = np.random.randint(0,2,l.output.shape);
+						l.output = l.output*l.d_selected
+					else:
+						l.d_selected = np.random.binomial(1,l.dropout,l.output.shape);
+						l.output = l.output*l.d_selected
 			elif(l.dropout is not None and self.train == False):
 				l.output = l.output*(1.0 - l.dropout);
-
+				
 			#one row in output is bias, set it to 1
 			l.output[-1,:] = 1.0
+
 
 		#ignore last row for network output
 		self.output = self.layer[len(self.layer)-1].output[0:-1,:]
@@ -120,6 +140,9 @@ class net(object):
 				l.activation_derivative = 1.0/((1+np.abs(l.weighted_sums)**2))
 			elif(l.activation == 'sigmoid'):
 				l.activation_derivative = l.output*(1 - l.output);
+        		elif(l.activation == 'tanh'):
+              		#l.activation_derivative = ((2.0/3.0)/1.7159)*(1.7159**2 - l.output**2)
+				l.activation_derivative = 0.3885230297025856*(2.94431281 - l.output*l.output)
 			elif(l.activation == 'linear_rectifier'):
 				#1 if greater than 0, 0 otherwise.
 				#This stores them as bools - but it doesn't matter
@@ -127,12 +150,21 @@ class net(object):
 			else: #base case is linear
 				l.activation_derivative = np.ones(l.output.shape);
 
+
+				
 			#bottom row of activation derivative is the bias 'neuron'
 			#it's derivative is always 0
 			l.activation_derivative[-1,:] = 0.0
 
 			l.delta = l.activation_derivative*delta_temp;
 			
+			#zero out any deltas for neurons that weren't selected
+			if(l.n_active_count is not None):
+				l.delta[l.selected_neurons] = 0;
+			
+			if(l.dropout is not None and self.train == True):
+				if(l.activation != 'linear_rectifier'):
+					l.delta = l.delta*l.d_selected
 			#calculate weight gradient
 			l.gradient = l.gradient + np.dot(l.delta,l.input.transpose());
 		self.epoch_size = self.epoch_size + self._input.shape[1];
