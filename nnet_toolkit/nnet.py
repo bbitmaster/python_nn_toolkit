@@ -1,12 +1,15 @@
 import numpy as np
 		
 class layer(object):
-	def __init__(self,node_count,activation='squash',step_size=None,dropout=None,n_active_count=None):
+	def __init__(self,node_count,activation='squash',step_size=None,dropout=None,n_active_count=None,n_do_abs=False):
 		self.node_count = node_count
 		self.activation = activation
 		self.step_size = step_size
 		self.dropout = dropout
+		
+		#parameters related to highly experimental research code - should be shifted to another branch
 		self.n_active_count = n_active_count
+		self.n_do_abs = n_do_abs;
 		pass;
 		
 class net(object):
@@ -92,8 +95,12 @@ class net(object):
 			else: #base case is linear
 				l.output = l.weighted_sums
 			
+			#experimental research code -- I plan to shift this to another branch
 			if(l.n_active_count is not None):
-				activation_abs = np.abs(l.weighted_sums)
+				if(l.n_do_abs):
+					activation_abs = np.abs(l.weighted_sums);
+				else:
+					activation_abs = l.weighted_sums
 				#place smallest activations in top rows
 				sorted_activations = np.sort(activation_abs,axis=0)
 				#select the n'th smallest activation, and set everything >= it to 0
@@ -171,6 +178,11 @@ class net(object):
 		self.epoch_size = self.epoch_size + self._input.shape[1];
 
 	def update_weights(self):
+		#Prevent calling update_weights() without calling back_propagate first
+		#(with a non-empty vector) from crashing.
+		if(self.epoch_size == 0):
+			return;
+			
 		for l in reversed(self.layer):
 			l.weight_change = -l.step_size*l.gradient/self.epoch_size;
 			l.weights = l.weights + l.weight_change;
