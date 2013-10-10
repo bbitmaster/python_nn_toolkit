@@ -21,8 +21,9 @@ def maxabs_select_func(self,params):
     activation_abs = np.abs(self.weighted_sums);
     #place smallest activations in top rows
     sorted_activations = np.sort(activation_abs,axis=0)
-    #select the n'th smallest activation, and set everything >= it to 0
-    self.selected_neurons = activation_abs <= sorted_activations[n_active_count,:]
+    #select the n'th largest activation (-n_active_count means nth largest)
+    #set everything less than it to 0
+    self.selected_neurons = activation_abs < sorted_activations[-n_active_count,:]
     self.output[self.selected_neurons] = 0;
 
 
@@ -66,8 +67,9 @@ def maxabs_select_func_normalized(self,params):
     activation_abs = np.abs(normalized_activations);
     #place smallest activations in top rows
     sorted_activations = np.sort(activation_abs,axis=0)
-    #select the n'th smallest activation, and set everything >= it to 0
-    self.selected_neurons = activation_abs <= sorted_activations[n_active_count,:]
+    #select the n'th largest activation (-n_active_count means nth largest)
+    #set everything less than it to 0
+    self.selected_neurons = activation_abs < sorted_activations[-n_active_count,:]
     self.output[self.selected_neurons] = 0;
 
 
