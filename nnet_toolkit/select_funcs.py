@@ -50,7 +50,7 @@ def most_positive_select_func(self,params):
     self.output[self.selected_neurons] = 0;
 
 #select based on minimum euclidean distance to dot product=0 hyperplane. 
-def minabs_select_func_normalized(self,params):
+def minabs_normalized_select_func(self,params):
     n_active_count = params;
     #get the norm of each neurons weights.
     weight_norm = np.sum(self.weights**2,axis=1)**(1./2.);
@@ -66,7 +66,7 @@ def minabs_select_func_normalized(self,params):
 
 
 #select based on maximum euclidean distance to dot product=0 hyperplane. 
-def maxabs_select_func_normalized(self,params):
+def maxabs_normalized_select_func(self,params):
     n_active_count = params;
     #get the norm of each neurons weights.
     weight_norm = np.sum(self.weights**2,axis=1)**(1./2.);
@@ -83,7 +83,7 @@ def maxabs_select_func_normalized(self,params):
 
 
 #select based on most negative activation. (selects the smallest activation where smallest)
-def most_negative_select_func_normalized(self,params):
+def most_negative_normalized_select_func(self,params):
     n_active_count = params;
     #get the norm of each neurons weights.
     weight_norm = np.sum(self.weights**2,axis=1)**(1./2.);
@@ -97,7 +97,7 @@ def most_negative_select_func_normalized(self,params):
     self.selected_neurons = activation >= sorted_activations[n_active_count,:]
     self.output[self.selected_neurons] = 0;
     
-def most_positive_select_func_normalized(self,params):
+def most_positive_normalized_select_func(self,params):
     n_active_count = params;
     #get the norm of each neurons weights.
     weight_norm = np.sum(self.weights**2,axis=1)**(1./2.);
