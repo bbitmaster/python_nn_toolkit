@@ -1,7 +1,9 @@
 import numpy as np
         
 class layer(object):
-    def __init__(self,node_count,activation='squash',step_size=None,dropout=None,select_func=None,select_func_params=None):
+    def __init__(self,node_count,activation='squash',step_size=None,dropout=None,
+                 select_func=None,select_func_params=None,initialization_scheme=None,
+                 initialization_constant=None):
         self.node_count = node_count
         self.activation = activation
         self.step_size = step_size
@@ -12,7 +14,8 @@ class layer(object):
         self.select_func = select_func
         self.select_func_params=select_func_params
         self.selected_neurons = None;
-        
+        self.initialization_scheme = initialization_scheme;
+        self.initialization_constant = initialization_constant;
         pass;
         
 class net(object):
@@ -43,13 +46,28 @@ class net(object):
 
     def initialize_weights(self):
         for index,l in enumerate(self.layer):
-            if index == 0:
-                C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.5 )
+            if(l.initialization_scheme == 'krizhevsky'):
+                #taken from
+                #'ImageNet Classification with Deep Convolutional Neural Networks'
+                #Hinton et all
+                l.weights = np.random.normal(0.0,.01,[l.node_count_output+1, l.node_count_input+1])
+                l.weights[:,-1] = 1.0
+            elif(l.initialization_scheme == 'glorot'):
+                #taken from
+                #'Understanding the difficulty of training deep feedforward neural networks'
+                #Xavier Glorot, Yoshua Bengio
+                C = np.sqrt(6)/np.sqrt(l.node_count_output + l.node_count_input + 1)
+                if(l.initialization_constant is not None):
+                    C = C*l.initialization_constant
+                l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
             else:
-                C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.3 )
-            #the bottom row is the weights for the bias neuron
-            # -- this neuron is set to 1.0 and these weights are essentially ignored
-            l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
+                if index == 0:
+                    C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.5 )
+                else:
+                    C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.3 )
+                #the bottom row is the weights for the bias neuron
+                # -- this neuron is set to 1.0 and these weights are essentially ignored
+                l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
 
     def zero_gradients(self):
         for l in self.layer:
@@ -95,6 +113,11 @@ class net(object):
                 #TODO: softmax? others?
             elif(l.activation == 'linear_rectifier'):
                 l.output = np.maximum(0,l.weighted_sums)
+            elif(l.activation == 'softmax'):
+                l.output = np.exp(l.weighted_sums)
+                #ignore bottom row in the summation since it does not represent any class at all
+                l.output = l.output/np.sum(l.output[0:-1,:],axis=0)
+                
             else: #base case is linear
                 l.output = l.weighted_sums
             
@@ -152,11 +175,9 @@ class net(object):
                 #1 if greater than 0, 0 otherwise.
                 #This stores them as bools - but it doesn't matter
                 l.activation_derivative = np.greater(l.output,0);    
-            else: #base case is linear
+            else: #base case is linear or softmax
                 l.activation_derivative = np.ones(l.output.shape);
 
-
-                
             #bottom row of activation derivative is the bias 'neuron'
             #it's derivative is always 0
             l.activation_derivative[-1,:] = 0.0
