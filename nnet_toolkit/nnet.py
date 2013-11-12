@@ -3,7 +3,7 @@ import numpy as np
 class layer(object):
     def __init__(self,node_count,activation='squash',step_size=None,dropout=None,
                  select_func=None,select_func_params=None,initialization_scheme=None,
-                 initialization_constant=None):
+                 initialization_constant=None,sparse_penalty=None,sparse_target=None):
         self.node_count = node_count
         self.activation = activation
         self.step_size = step_size
@@ -14,8 +14,16 @@ class layer(object):
         self.select_func = select_func
         self.select_func_params=select_func_params
         self.selected_neurons = None;
+        
+        #parameters related to the weight initilization scheme
         self.initialization_scheme = initialization_scheme;
         self.initialization_constant = initialization_constant;
+        
+        #parameters related to sparse auto-encoder based on KL-divergence
+        self.sparse_penalty = sparse_penalty
+        self.sparse_target = sparse_target
+        self.mean_estimate_count = None
+        
         pass;
         
 class net(object):
@@ -117,9 +125,18 @@ class net(object):
                 l.output = np.exp(l.weighted_sums)
                 #ignore bottom row in the summation since it does not represent any class at all
                 l.output = l.output/np.sum(l.output[0:-1,:],axis=0)
-                
             else: #base case is linear
                 l.output = l.weighted_sums
+                
+            if(l.sparse_penalty is not None):
+                #first pass - compute the mean
+                #every other pass - maintain moving average
+                if(l.mean_estimate_count is None):
+                    l.mean_estimate = np.mean(l.output,axis=1)
+                    l.mean_estimate_count = 0
+                else:
+                    l.mean_estimate = 0.99*l.mean_estimate + .01*np.mean(l.output,axis=1);
+                    l.mean_estimate_count = l.mean_estimate_count + 1;
             
             if(l.select_func is not None):
                 l.select_func(l,l.select_func_params);
@@ -181,8 +198,30 @@ class net(object):
             #bottom row of activation derivative is the bias 'neuron'
             #it's derivative is always 0
             l.activation_derivative[-1,:] = 0.0
-
+            
+            
+            #add sparsity error to delta
+            #NOTE: according to the equations given in Andrew Ng's paper This is NOT the way to do it.
+            #His equations show that you should add the sparse error term AFTER multiplying by the activation derivative.
+            #however - in two seperate sources I have checked it is implemented this way.
+            #TODO: Do the math and see if this is actually correct
+            #source 1:
+            #https://github.com/rasmusbergpalm/DeepLearnToolbox/blob/master/NN/nnbp.m
+            #source 2:
+            #http://easymachinelearning.blogspot.com/p/sparse-auto-encoders.html
+            if(l.sparse_penalty is not None):
+                sparse_error = l.sparse_penalty*(-l.sparse_target/l.mean_estimate + (1.0 - l.sparse_target)/(1.0 - l.mean_estimate))
+                delta_temp = delta_temp +  sparse_error[:,np.newaxis]
+            
             l.delta = l.activation_derivative*delta_temp;
+
+            #add sparsity error to delta
+            #This is the way as given in andrew ng's paper. It is commented until I can check what is actually correct.
+            #Andre Ng's Paper: http://www.stanford.edu/class/cs294a/sparseAutoencoder.pdf
+            #if(l.sparse_penalty is not None):
+            #    sparse_error = -l.sparse_penalty*(l.sparse_target/l.mean_estimate + (1.0 - l.sparse_target)/(1.0 - l.mean_estimate))
+            #    l.delta = l.delta +  sparse_error[:,np.newaxis]
+            #    l.delta[-1,:] = 0.0;
             
             #zero out any deltas for neurons that were selected
             #note: selected_neurons means the neuron was selected for being
