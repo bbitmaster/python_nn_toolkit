@@ -2,13 +2,18 @@ import numpy as np
         
 class layer(object):
     def __init__(self,node_count,activation='squash',step_size=None,dropout=None,
+                 momentum=None,maxnorm=None,use_float32=False,
                  select_func=None,select_func_params=None,initialization_scheme=None,
                  initialization_constant=None,sparse_penalty=None,sparse_target=None):
         self.node_count = node_count
         self.activation = activation
         self.step_size = step_size
+        
         #tells the percentage of neurons to keep active
         self.dropout = dropout
+
+        self.maxnorm = maxnorm
+        self.momentum = momentum
         
         #parameters related to experimental research code. These can be ignored for normal use.
         self.select_func = select_func
@@ -24,6 +29,7 @@ class layer(object):
         self.sparse_target = sparse_target
         self.mean_estimate_count = None
         
+        self.use_float32 = use_float32
         pass;
         
 class net(object):
@@ -49,6 +55,12 @@ class net(object):
         self.layer[len(self.layer)-1].dropout = None
         self.initialize_weights()
         self.zero_gradients()
+        
+        #init momentum
+        for l in self.layer:
+            if(l.momentum is not None):
+                l.vel = np.zeros(l.weights.shape,dtype=l.weights.dtype)
+            
         self.epoch_size = 0
         self.train = True
 
@@ -76,20 +88,23 @@ class net(object):
                 #the bottom row is the weights for the bias neuron
                 # -- this neuron is set to 1.0 and these weights are essentially ignored
                 l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
+            if(l.use_float32):
+                l.weights = np.asarray(l.weights,np.float32)
 
     def zero_gradients(self):
         for l in self.layer:
-            l.gradient = np.zeros(l.weights.shape)
+            l.gradient = np.zeros(l.weights.shape,dtype=l.weights.dtype)
 
     @property
     def input(self):
-        self._input.copy_to_host()
-        return self._input.numpy_array
+#        self._input.copy_to_host()
+#        return self._input.numpy_array
+        return self._input
 
     @input.setter
     def input(self,value):
         self._input = value
-        self._input = np.append(self._input,np.ones((1,self._input.shape[1])),axis=0)
+        self._input = np.append(self._input,np.ones((1,self._input.shape[1]),dtype=value.dtype),axis=0)
     
     @input.deleter
     def input(self):
@@ -171,16 +186,16 @@ class net(object):
         if(error is not None):
             self.error = error
 
-        #python doesn't easily allow reversed(enumerate()) - use this instead
         for l in reversed(self.layer):
             #if we're on the last layer
             #print(str(index));
             if(l.index == len(self.layer)-1):
                 #must do this to account for the bias
-                delta_temp = np.append(self.error,np.zeros((1,self.error.shape[1])),axis=0)
+                delta_temp = np.append(self.error,np.zeros((1,self.error.shape[1]),dtype=self.error.dtype),axis=0)
+
             else:
                 delta_temp = np.dot(self.layer[l.index+1].weights.transpose(),self.layer[l.index+1].delta);
-            
+
             if(l.activation == 'squash'):
                 l.activation_derivative = 1.0/((1+np.abs(l.weighted_sums)**2))
             elif(l.activation == 'sigmoid'):
@@ -193,7 +208,7 @@ class net(object):
                 #This stores them as bools - but it doesn't matter
                 l.activation_derivative = np.greater(l.output,0);    
             else: #base case is linear or softmax
-                l.activation_derivative = np.ones(l.output.shape);
+                l.activation_derivative = np.ones(l.output.shape,dtype=l.output.dtype);
 
             #bottom row of activation derivative is the bias 'neuron'
             #it's derivative is always 0
@@ -242,9 +257,16 @@ class net(object):
         #(with a non-empty vector) from crashing.
         if(self.epoch_size == 0):
             return;
-            
         for l in reversed(self.layer):
             l.weight_change = -l.step_size*l.gradient/self.epoch_size;
+            if(l.momentum is not None):
+                l.vel = l.momentum*l.vel + l.weight_change
+                l.weight_change = l.vel
             l.weights = l.weights + l.weight_change;
-            l.gradient = np.zeros(l.weights.shape);
+            if(l.maxnorm is not None):
+                weight_norm = np.sum(l.weights**2,axis=0)**0.5
+                condition = weight_norm > l.maxnorm
+                l.weights = l.maxnorm*(l.weights/weight_norm)*condition + l.weights*(1 - condition)
+                
+            l.gradient = np.zeros(l.weights.shape,dtype=l.weights.dtype);
         self.epoch_size = 0;
