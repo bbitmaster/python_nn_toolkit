@@ -1,9 +1,10 @@
 import numpy as np
-        
+import select_funcs as sf
+
 class layer(object):
     def __init__(self,node_count,activation='squash',step_size=None,dropout=None,
                  momentum=None,maxnorm=None,use_float32=False,
-                 select_func=None,select_func_params=None,initialization_scheme=None,
+                 select_func=None,initialization_scheme=None,nodes_per_group=None,
                  initialization_constant=None,sparse_penalty=None,sparse_target=None):
         self.node_count = node_count
         self.activation = activation
@@ -14,12 +15,19 @@ class layer(object):
 
         self.maxnorm = maxnorm
         self.momentum = momentum
+
+        #function used to select neurons
+        #used for local winner take all or maxout, or your own selection function (k sparse autoencoders?)
+        if(activation == 'lwta'):
+            self.select_func = sf.lwta_select_func
+        elif(activation == 'maxout'):
+            self.select_func = sf.maxout_select_func
+        else:
+            self.select_func = select_func
         
-        #parameters related to experimental research code. These can be ignored for normal use.
-        self.select_func = select_func
-        self.select_func_params=select_func_params
         self.selected_neurons = None;
-        
+        self.nodes_per_group = nodes_per_group
+
         #parameters related to the weight initilization scheme
         self.initialization_scheme = initialization_scheme;
         self.initialization_constant = initialization_constant;
@@ -34,13 +42,21 @@ class layer(object):
         
 class net(object):
     def __init__(self,layer,step_size=None,dropout=None):
-        #don't store first layer since it is simply an input layer
-        self.layer = layer[1:len(layer)]
 
+        #set up input and output node counts
         
-        for i in range(len(self.layer)):
-            self.layer[i].node_count_input  = layer[i].node_count
-            self.layer[i].node_count_output = layer[i+1].node_count    
+        #NOTE: a maxout layer can have more outputs than there are inputs on the layer after
+        #This is due to the grouping of nodes before they are passed to the next layer
+        for i in range(1,len(layer)):
+            #If previous layer was maxout, then nodes must be grouped to get inputs for this layer.
+            if(layer[i-1].activation == 'maxout'):
+                layer[i].node_count_input  = layer[i-1].node_count/layer[i-1].nodes_per_group
+            else:
+                layer[i].node_count_input  = layer[i-1].node_count
+            layer[i].node_count_output = layer[i].node_count    
+        
+        #Store layers, but don't store first layer since it is simply the input layer
+        self.layer = layer[1:len(layer)]
         
         #we may want to be able to quickly loop over the layer
         #and know the index
@@ -86,7 +102,7 @@ class net(object):
                 else:
                     C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.3 )
                 #the bottom row is the weights for the bias neuron
-                # -- this neuron is set to 1.0 and these weights are essentially ignored
+                # -- this neuron output is always set to 1.0 and these weights are essentially ignored
                 l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
             if(l.use_float32):
                 l.weights = np.asarray(l.weights,np.float32)
@@ -97,8 +113,6 @@ class net(object):
 
     @property
     def input(self):
-#        self._input.copy_to_host()
-#        return self._input.numpy_array
         return self._input
 
     @input.setter
@@ -115,15 +129,12 @@ class net(object):
         if input is not None:
             self.input = input
 
-        #NOTE: a possible speedup here would be not to reconstruct the matrix, but to
-        #fill it in each time.
         for index,l in enumerate(self.layer):
             if(index == 0):
                 input = self._input
             else:
                 input = self.layer[index-1].output
             l.input = input
-            #print(str(index) + " " + str(l.weights.shape) + " " + str(l.input.shape))
             l.weighted_sums = np.dot(l.weights,l.input)
             
             #apply activation function
@@ -133,7 +144,6 @@ class net(object):
                 l.output = 1/(1 + np.exp(-1*l.weighted_sums))
             elif(l.activation == 'tanh'):
                 l.output = 1.7159*np.tanh((2.0/3.0)*l.weighted_sums)
-                #TODO: softmax? others?
             elif(l.activation == 'linear_rectifier'):
                 l.output = np.maximum(0,l.weighted_sums)
             elif(l.activation == 'softmax'):
@@ -154,28 +164,32 @@ class net(object):
                     l.mean_estimate_count = l.mean_estimate_count + 1;
             
             if(l.select_func is not None):
-                l.select_func(l,l.select_func_params);
+                l.select_func(l);
                 
             if(l.dropout is not None and self.train == True):
+                #Multiple code paths to optimize for speed. The common case for dropout is to use
+                #with rectified linear activations. In that case we do not need to save
+                #l.d_selected. l.d_selected is saved to allow gradients to be ignored for weights
+                #that were dropped out. linear rectified gradients are ignored anyway (if the
+                #output is 0).
                 if(l.activation == 'linear_rectifier'):
-                    if(l.dropout == 0.5):
+                    if(l.dropout == 0.5): #randint is slightly faster, and 0.5 is a common case
                         l.output = l.output*np.random.randint(0,2,l.output.shape);
                     else:
-                        l.output = l.output*np.random.binomial(1,l.dropout,l.output.shape);
+                        l.output = l.output*np.random.binomial(1,(1 - l.dropout),l.output.shape);
                 else:
                     if(l.dropout == 0.5):
                         l.d_selected = np.random.randint(0,2,l.output.shape);
                         l.output = l.output*l.d_selected
                     else:
-                        l.d_selected = np.random.binomial(1,l.dropout,l.output.shape);
+                        l.d_selected = np.random.binomial(1,(1 - l.dropout),l.output.shape);
                         l.output = l.output*l.d_selected
                         
-            #TODO: Test this - it may be bugged! I think I should be doing: l.output = l.output*(l.dropout); 
             elif(l.dropout is not None and self.train == False):
                 l.output = l.output*(1.0 - l.dropout);
                 
             #one row in output is bias, set it to 1
-            #note that bias is enabled even if dropout disabled it.
+            #note that bias 'input' is enabled even if dropout disabled it.
             l.output[-1,:] = 1.0
 
 
@@ -187,15 +201,12 @@ class net(object):
             self.error = error
 
         for l in reversed(self.layer):
-            #if we're on the last layer
-            #print(str(index));
+            #if this is the last layer
             if(l.index == len(self.layer)-1):
                 #must do this to account for the bias
                 delta_temp = np.append(self.error,np.zeros((1,self.error.shape[1]),dtype=self.error.dtype),axis=0)
-
             else:
                 delta_temp = np.dot(self.layer[l.index+1].weights.transpose(),self.layer[l.index+1].delta);
-
             if(l.activation == 'squash'):
                 l.activation_derivative = 1.0/((1+np.abs(l.weighted_sums)**2))
             elif(l.activation == 'sigmoid'):
@@ -205,38 +216,29 @@ class net(object):
                 l.activation_derivative = 0.3885230297025856*(2.94431281 - l.output*l.output)
             elif(l.activation == 'linear_rectifier'):
                 #1 if greater than 0, 0 otherwise.
-                #This stores them as bools - but it doesn't matter
+                #This stores as bools
                 l.activation_derivative = np.greater(l.output,0);    
-            else: #base case is linear or softmax
+            else: #base case is linear or softmax (also applies to lwta and maxout)
                 l.activation_derivative = np.ones(l.output.shape,dtype=l.output.dtype);
 
             #bottom row of activation derivative is the bias 'neuron'
             #it's derivative is always 0
             l.activation_derivative[-1,:] = 0.0
             
-            
             #add sparsity error to delta
-            #NOTE: according to the equations given in Andrew Ng's paper This is NOT the way to do it.
-            #His equations show that you should add the sparse error term AFTER multiplying by the activation derivative.
-            #however - in two seperate sources I have checked it is implemented this way.
-            #TODO: Do the math and see if this is actually correct
-            #source 1:
-            #https://github.com/rasmusbergpalm/DeepLearnToolbox/blob/master/NN/nnbp.m
-            #source 2:
-            #http://easymachinelearning.blogspot.com/p/sparse-auto-encoders.html
+            #from http://ufldl.stanford.edu/wiki/index.php/Autoencoders_and_Sparsity
             if(l.sparse_penalty is not None):
                 sparse_error = l.sparse_penalty*(-l.sparse_target/l.mean_estimate + (1.0 - l.sparse_target)/(1.0 - l.mean_estimate))
                 delta_temp = delta_temp +  sparse_error[:,np.newaxis]
             
             l.delta = l.activation_derivative*delta_temp;
 
-            #add sparsity error to delta
-            #This is the way as given in andrew ng's paper. It is commented until I can check what is actually correct.
-            #Andre Ng's Paper: http://www.stanford.edu/class/cs294a/sparseAutoencoder.pdf
-            #if(l.sparse_penalty is not None):
-            #    sparse_error = -l.sparse_penalty*(l.sparse_target/l.mean_estimate + (1.0 - l.sparse_target)/(1.0 - l.mean_estimate))
-            #    l.delta = l.delta +  sparse_error[:,np.newaxis]
-            #    l.delta[-1,:] = 0.0;
+            #For maxout networks, we have a smaller weight matrix which means delta will be smaller than it should be
+            #It must be enlarged here (via np.repeat). The path that the gradient takes is accounted for in l.selected_neurons
+            #Bias neuron is removed then reinserted via np.append
+            if(l.activation == 'maxout'):
+                l.delta = np.repeat(l.delta[0:-1],l.nodes_per_group,axis=0)
+                l.delta = np.append(l.delta,np.ones((1,l.delta.shape[1]),l.weights.dtype),axis=0)
             
             #zero out any deltas for neurons that were selected
             #note: selected_neurons means the neuron was selected for being
@@ -245,11 +247,17 @@ class net(object):
                 l.delta[l.selected_neurons] = 0;
                 l.selected_neurons = None;
             
+            #ignore deltas for weights that were dropped out.
             if(l.dropout is not None and self.train == True):
+            #This is simply an optimization for speed. If we have rectified linear activations
+            #then dropout makes the activation be 0. gradients should be ignored anyway for
+            #0 activations. That gets rid of the need to do the below multiply.
                 if(l.activation != 'linear_rectifier'):
                     l.delta = l.delta*l.d_selected
+
             #calculate weight gradient
             l.gradient = l.gradient + np.dot(l.delta,l.input.transpose());
+
         self.epoch_size = self.epoch_size + self._input.shape[1];
 
     def update_weights(self):
