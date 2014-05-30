@@ -174,15 +174,15 @@ class net(object):
                 #output is 0).
                 if(l.activation == 'linear_rectifier'):
                     if(l.dropout == 0.5): #randint is slightly faster, and 0.5 is a common case
-                        l.output = l.output*np.random.randint(0,2,l.output.shape);
+                        l.output = l.output*(np.random.randint(0,2,l.output.shape).astype(np.float32));
                     else:
-                        l.output = l.output*np.random.binomial(1,(1 - l.dropout),l.output.shape);
+                        l.output = l.output*(np.random.binomial(1,(1 - l.dropout),l.output.shape).astype(np.float32));
                 else:
                     if(l.dropout == 0.5):
-                        l.d_selected = np.random.randint(0,2,l.output.shape);
+                        l.d_selected = np.random.randint(0,2,l.output.shape).astype(np.float32);
                         l.output = l.output*l.d_selected
                     else:
-                        l.d_selected = np.random.binomial(1,(1 - l.dropout),l.output.shape);
+                        l.d_selected = np.random.binomial(1,(1 - l.dropout),l.output.shape).astype(np.float32);
                         l.output = l.output*l.d_selected
                         
             elif(l.dropout is not None and self.train == False):
