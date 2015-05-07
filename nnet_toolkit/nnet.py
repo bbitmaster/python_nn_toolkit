@@ -31,7 +31,7 @@ class layer(object):
         self.momentum = momentum
 
         #function used to select neurons
-        #used for local winner take all or maxout, or your own selection function (k sparse autoencoders?)
+        #used for local winner take all, maxout, or your own selection function (k sparse autoencoders?)
         if(activation == 'lwta'):
             self.select_func = sf.lwta_select_func
         elif(activation == 'maxout'):
@@ -78,7 +78,7 @@ class net(object):
             self.layer[i].index = i
 
         for l in self.layer:
-            if(step_size is not None):
+            if(step_size is not None and l.step_size is None):
                 l.step_size = step_size;
             if(dropout is not None):
                 l.dropout = dropout
@@ -110,6 +110,11 @@ class net(object):
                 if(l.initialization_constant is not None):
                     C = C*l.initialization_constant
                 l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
+                #a large bias weight for LWTA and Maxout can make a unit win the max too often
+                #as described in "An Emperical Investigation of Catastrophic Forgetting in Neural Networks"
+                #We set bias weights to 0 for these types of nets
+                if(l.activation == 'lwta' or l.activation == 'maxout'):
+                    l.weights[:,-1] = 0.0
             else:
                 if index == 0:
                     C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.5 )
@@ -118,6 +123,11 @@ class net(object):
                 #the bottom row is the weights for the bias neuron
                 # -- this neuron output is always set to 1.0 and these weights are essentially ignored
                 l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
+                #a large bias weight for LWTA and Maxout can make a unit win the max too often
+                #as described in "An Emperical Investigation of Catastrophic Forgetting in Neural Networks"
+                #We set bias weights to 0 for these types of nets
+                if(l.activation == 'lwta' or l.activation == 'maxout'):
+                    l.weights[:,-1] = 0.0
             if(l.use_float32):
                 l.weights = np.asarray(l.weights,np.float32)
 
@@ -247,20 +257,6 @@ class net(object):
             
             l.delta = l.activation_derivative*delta_temp;
 
-            #For maxout networks, we have a smaller weight matrix which means delta will be smaller than it should be
-            #It must be enlarged here (via np.repeat). The path that the gradient takes is accounted for in l.selected_neurons
-            #Bias neuron is removed then reinserted via np.append
-            if(l.activation == 'maxout'):
-                l.delta = np.repeat(l.delta[0:-1],l.nodes_per_group,axis=0)
-                l.delta = np.append(l.delta,np.ones((1,l.delta.shape[1]),l.weights.dtype),axis=0)
-            
-            #zero out any deltas for neurons that were selected
-            #note: selected_neurons means the neuron was selected for being
-            #deactivated.
-            if(l.selected_neurons is not None):
-                l.delta[l.selected_neurons] = 0;
-                l.selected_neurons = None;
-            
             #ignore deltas for weights that were dropped out.
             if(l.dropout is not None and self.train == True):
             #This is simply an optimization for speed. If we have rectified linear activations
@@ -269,6 +265,19 @@ class net(object):
                 if(l.activation != 'linear_rectifier'):
                     l.delta = l.delta*l.d_selected
 
+            #For maxout networks, we have a smaller weight matrix which means delta will be smaller than it should be
+            #It must be enlarged here (via np.repeat). The path that the gradient takes is accounted for in l.selected_neurons
+            #Bias neuron is removed then reinserted via np.append
+            if(l.activation == 'maxout'):
+                l.delta = np.repeat(l.delta[0:-1],l.nodes_per_group,axis=0)
+                l.delta = np.append(l.delta,np.ones((1,l.delta.shape[1]),l.weights.dtype),axis=0)
+            
+            #zero out any deltas for neurons that were selected
+            #note: "selected" means the neuron was selected for being deactivated.
+            if(l.selected_neurons is not None):
+                l.delta[l.selected_neurons] = 0;
+                l.selected_neurons = None;
+            
             #calculate weight gradient
             l.gradient = l.gradient + np.dot(l.delta,l.input.transpose());
 
