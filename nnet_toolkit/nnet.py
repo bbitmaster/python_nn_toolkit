@@ -19,7 +19,8 @@ class layer(object):
     def __init__(self,node_count,activation='squash',step_size=None,dropout=None,
                  momentum=None,maxnorm=None,use_float32=False,
                  select_func=None,initialization_scheme=None,nodes_per_group=None,
-                 initialization_constant=None,sparse_penalty=None,sparse_target=None):
+                 initialization_constant=None,sparse_penalty=None,sparse_target=None,
+                 rms_prop_rate=None):
         self.node_count = node_count
         self.activation = activation
         self.step_size = step_size
@@ -29,6 +30,7 @@ class layer(object):
 
         self.maxnorm = maxnorm
         self.momentum = momentum
+        self.rms_prop_rate = rms_prop_rate
 
         #function used to select neurons
         #used for local winner take all, maxout, or your own selection function (k sparse autoencoders?)
@@ -86,10 +88,13 @@ class net(object):
         self.initialize_weights()
         self.zero_gradients()
         
-        #init momentum
+        #init momentum, and rmsprop
         for l in self.layer:
             if(l.momentum is not None):
                 l.vel = np.zeros(l.weights.shape,dtype=l.weights.dtype)
+            if(l.rms_prop_rate is not None):
+                l.mean_square_avg = np.ones(l.weights.shape,dtype=l.weights.dtype)
+
             
         self.epoch_size = 0
         self.train = True
@@ -289,6 +294,9 @@ class net(object):
         if(self.epoch_size == 0):
             return;
         for l in reversed(self.layer):
+            if(l.rms_prop_rate is not None):
+                l.mean_square_avg = l.rms_prop_rate*l.mean_square_avg + (1.0 - l.rms_prop_rate)*(l.gradient**2)
+                l.gradient = l.gradient/(np.sqrt(l.mean_square_avg))
             l.weight_change = -l.step_size*l.gradient/self.epoch_size;
             if(l.momentum is not None):
                 l.vel = l.momentum*l.vel + l.weight_change
