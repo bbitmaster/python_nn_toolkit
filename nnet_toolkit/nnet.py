@@ -102,12 +102,14 @@ class net(object):
     def initialize_weights(self):
         for index,l in enumerate(self.layer):
             if(l.initialization_scheme == 'krizhevsky'):
+                print('using Krizhevsky initialization')
                 #taken from
                 #'ImageNet Classification with Deep Convolutional Neural Networks'
                 #Hinton et all
                 l.weights = np.random.normal(0.0,.01,[l.node_count_output+1, l.node_count_input+1])
                 l.weights[:,-1] = 1.0
             elif(l.initialization_scheme == 'glorot'):
+                print('using glorot initialization')
                 #taken from
                 #'Understanding the difficulty of training deep feedforward neural networks'
                 #Xavier Glorot, Yoshua Bengio
@@ -120,7 +122,13 @@ class net(object):
                 #We set bias weights to 0 for these types of nets
                 if(l.activation == 'lwta' or l.activation == 'maxout'):
                     l.weights[:,-1] = 0.0
-            else:
+            elif(l.initialization_scheme == 'scawi'):
+                print('using scawi initialization')
+                #taken from
+                #Statistically Controlled Weight Initialization (SCAWI)
+                #Gian Paolo Drago and Sandro Ridella
+                #there is a slight modification to the formula used for the
+                #first layer
                 if index == 0:
                     C = 1.3/np.sqrt(1 + (l.node_count_input+1)*0.5 )
                 else:
@@ -128,11 +136,29 @@ class net(object):
                 #the bottom row is the weights for the bias neuron
                 # -- this neuron output is always set to 1.0 and these weights are essentially ignored
                 l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
+                if(l.activation == 'lwta' or l.activation == 'maxout'):
+                    l.weights[:,-1] = 0.0
+            elif(l.initialization_scheme == 'prelu'):
+                print('using prelu initialization')
+                #taken from "Delving Deep into Rectifiers: Surpassing Human-Level Performance on
+                #ImageNet Classification"
+                if(index == 0):
+                    std = np.sqrt(1./l.node_count_input)
+                else:
+                    std = np.sqrt(2./l.node_count_input)
+                l.weights = np.random.normal(0.0,std,[l.node_count_output+1, l.node_count_input+1])
+                l.weights[:,-1] = 0.0
+            else:
+                print('using prelu initialization')
+            #by default, use the method promoted in lecun's Effecient Backprop paper
+                C = 1/np.sqrt(l.node_count_input+1)
+                l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
                 #a large bias weight for LWTA and Maxout can make a unit win the max too often
                 #as described in "An Emperical Investigation of Catastrophic Forgetting in Neural Networks"
                 #We set bias weights to 0 for these types of nets
                 if(l.activation == 'lwta' or l.activation == 'maxout'):
                     l.weights[:,-1] = 0.0
+
             if(l.use_float32):
                 l.weights = np.asarray(l.weights,np.float32)
 
