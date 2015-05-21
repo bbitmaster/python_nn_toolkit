@@ -102,14 +102,12 @@ class net(object):
     def initialize_weights(self):
         for index,l in enumerate(self.layer):
             if(l.initialization_scheme == 'krizhevsky'):
-                print('using Krizhevsky initialization')
                 #taken from
                 #'ImageNet Classification with Deep Convolutional Neural Networks'
                 #Hinton et all
                 l.weights = np.random.normal(0.0,.01,[l.node_count_output+1, l.node_count_input+1])
                 l.weights[:,-1] = 1.0
             elif(l.initialization_scheme == 'glorot'):
-                print('using glorot initialization')
                 #taken from
                 #'Understanding the difficulty of training deep feedforward neural networks'
                 #Xavier Glorot, Yoshua Bengio
@@ -123,7 +121,6 @@ class net(object):
                 if(l.activation == 'lwta' or l.activation == 'maxout'):
                     l.weights[:,-1] = 0.0
             elif(l.initialization_scheme == 'scawi'):
-                print('using scawi initialization')
                 #taken from
                 #Statistically Controlled Weight Initialization (SCAWI)
                 #Gian Paolo Drago and Sandro Ridella
@@ -139,7 +136,6 @@ class net(object):
                 if(l.activation == 'lwta' or l.activation == 'maxout'):
                     l.weights[:,-1] = 0.0
             elif(l.initialization_scheme == 'prelu'):
-                print('using prelu initialization')
                 #taken from "Delving Deep into Rectifiers: Surpassing Human-Level Performance on
                 #ImageNet Classification"
                 if(index == 0):
@@ -149,7 +145,6 @@ class net(object):
                 l.weights = np.random.normal(0.0,std,[l.node_count_output+1, l.node_count_input+1])
                 l.weights[:,-1] = 0.0
             else:
-                print('using prelu initialization')
             #by default, use the method promoted in lecun's Effecient Backprop paper
                 C = 1/np.sqrt(l.node_count_input+1)
                 l.weights = C*2*(np.random.random([l.node_count_output+1, l.node_count_input+1]) - 0.5)
